@@ -226,6 +226,18 @@ const bannerView = (banner) => html`
   </div>
 `;
 
+const messageView = (message) => html`
+  <li>
+    ${ message.body }
+  </li>
+`;
+
+const messageListView = (messages) => html`
+  <ul class="message-list">
+    ${ (messages || []).map(messageView) }
+  </ul>
+`;
+
 const chapterView = (state, prev, send) => html`
     <div id="chapter-container" class=${ state.started ? "" : "invisible transparent" }>
       <div id="top-image" style=${ backgroundImageStyle(state) }>
@@ -244,11 +256,17 @@ const chapterView = (state, prev, send) => html`
         ${ state.chapter ? state.chapter.text.content.toDOM() : "" }
       </div>
 
+      <div class="messages">
+        <h2>Conversation</h2>
+
+        ${ messageListView(state.fragment ? state.fragment.messages : []) }
+      </div>
+
       ${ state.banner ? bannerView(state.banner) : "" }
 
       <div class="player-reply ${ state.reactionSent ? "invisible" : "" }">
         <textarea
-           placeholder="How do you react? Try to consider several possibilities…"
+           placeholder="What do you do? Try to consider several possibilities…"
            rows="10"
            value=${ state.chapter && state.chapter.reaction }
            oninput=${ e => { send("updateReactionText", { value: e.target.value }); } }>${ state.chapter && state.chapter.reaction }</textarea>
@@ -258,7 +276,7 @@ const chapterView = (state, prev, send) => html`
 `;
 
 const mainView = (state, prev, send) => html`
-  <main onload=${() => send("getChapter")}>
+  <main onload=${ () => send("getChapter") }>
     <div>
       ${ (!state.started && !state.error) ? loaderView(state, prev, send) : "" }
     </div>
