@@ -43,11 +43,11 @@ app.model({
         banner: null
     },
     reducers: {
-        receiveChapterData: (chapterData, state) => {
+        receiveChapter: (chapterData, state) => {
             return extend(state, { chapter: chapterData });
         },
 
-        chapterDataFailure: (info, state) => {
+        getChapterFailure: (info, state) => {
             return extend(state, { error: `Failed fetching chapter, status code: ${ info.statusCode }` });
         },
 
@@ -79,7 +79,7 @@ app.model({
             return extend(state, { musicPlaying: !state.musicPlaying });
         },
 
-        reactionSendingProblem: (data, state) => {
+        reactionSendingFailure: (data, state) => {
             return extend(
                 state,
                 { banner: {
@@ -90,18 +90,26 @@ app.model({
             );
         },
 
-        reactionSendingSuccess: (data, state) => {
+        receiveReactionResult: (data, state) => {
             return extend(state, { banner: { type: "success",
                                              text: "Reaction registered"},
                                    reaction: "",
                                    reactionSent: true });
+        },
+
+        receiveChapterMessages: (data, state) => {
+            return extend(state, {
+                chapter: extend(state.chapter, {
+                    messageThreads: data.messageThreads
+                })
+            });
         }
     },
     effects: {
         getChapter: (data, state, send, done) => {
             http("/api/chapters/" + state.chapterId + "/" + state.characterToken, (err, res, body) => {
                 if (res.statusCode >= 400) {
-                    send("chapterDataFailure",
+                    send("getChapterFailure",
                          { statusCode: res.statusCode },
                          done);
                     return;
@@ -110,7 +118,7 @@ app.model({
                 const response = JSON.parse(body);
                 response.text = editor.importText(response.text);
 
-                send("receiveChapterData", response, done);
+                send("receiveChapter", response, done);
             });
         },
 
@@ -161,13 +169,64 @@ app.model({
             xhr.addEventListener("load", function() {
                 const response = JSON.parse(this.responseText);
                 if (this.status >= 400) {
-                    send("reactionSendingProblem", {response: this}, done);
+                    send("reactionSendingFailure", {response: this}, done);
                     return;
                 }
 
-                send("reactionSendingSuccess", {}, done);
+                send("receiveReactionResult", {}, done);
             });
             xhr.send(JSON.stringify({ text: state.chapter.reaction }));
+        },
+
+        getMessages: (data, state, send, done) => {
+            const url = "/api/messages/" + state.chapterId + "/" +
+                      state.characterToken;
+
+            send("receiveChapterMessages", {
+                messageThreads: [
+                    {participants: [
+                        {id: 3, name: "Mildred Mayfield"}
+                    ],
+                     messages: [
+                         {sender: null,
+                          body: "The Harrises have a phone at home.",
+                          sentAt: "2016-10-18T22:09"},
+                         {sender: {id: 1, name: "Mildred Mayfield", role: "self"},
+                          body: "Could I use it to make an interstate call or is it too expensive?",
+                          sentAt: "2016-10-18T22:09"}
+                     ]},
+                    {participants: [
+                        {id: 2, name: "Frank Mayfield"},
+                        {id: 3, name: "Mildred Mayfield"},
+                        {id: 4, name: "George Miller"}
+                    ],
+                     messages: [
+                         {sender: {id: 2, name: "Frank Mayfield", role: "character"},
+                          body: "I don't think we should rely on the " +
+                              "police, but talking to them could help us.",
+                          sentAt: "2016-10-18T22:11"},
+                         {sender: {id: 4, name: "George Miller", role: "character"},
+                          body: "Yeah. At the very least, they will " +
+                              "give us some information so we can " +
+                              "figure things out by ourselves.",
+                          sentAt: "2016-10-18T22:11"}
+                     ]}
+                ]
+            }, done);
+
+            // const xhr = new XMLHttpRequest();
+            // xhr.open("GET", url);
+            // xhr.setRequestHeader("Content-Type", "application/json");
+            // xhr.addEventListener("load", function() {
+            //     const response = JSON.parse(this.responseText);
+            //     if (this.status >= 400) {
+            //         send("getMessagesFailure", {response: this}, done);
+            //         return;
+            //     }
+
+            //     send("receiveChapterMessages", {}, done);
+            // });
+            // xhr.send(JSON.stringify({ text: state.chapter.reaction }));
         }
     },
 
@@ -227,16 +286,95 @@ const bannerView = (banner) => html`
 `;
 
 const messageView = (message) => html`
-  <li>
-    ${ message.body }
-  </li>
+  <div class="message">
+    <strong>${ message.sender ? message.sender.name : "Narrator" }</strong>:
+    <span class=${ message.sender ? "" : "narrator" }>
+      ${ message.body }
+    </span>
+  </div>
 `;
 
-const messageListView = (messages) => html`
-  <ul class="message-list">
-    ${ (messages || []).map(messageView) }
-  </ul>
+const messageThreadView = (messageThread) => {
+    const participants = messageThread.participants.
+              filter(r => r.role !== "self").
+              map(char => char.name);
+    const participantEnd = participants.length > 0 ?
+              ", the narrator, and you" : "the narrator and you";
+
+    return html`
+  <li>
+    <div class="thread-participants">
+      Between ${ participants.join(", ") + participantEnd }
+    </div>
+    ${ messageThread.messages.map(messageView) }
+  </li>
 `;
+};
+
+const messageRecipientView = character => html`
+  <label>
+    <input type="checkbox" value=${ character.id } />
+    ${ character.name }
+  </label>
+`;
+
+const messageRecipientListView = (characters) => html`
+  <div class="recipients">
+    <label>Recipients:</label>
+    <input type="checkbox" checked disabled /> Narrator
+    ${ characters.filter(c => c.role !== "self").map(messageRecipientView) }
+  </div>
+`;
+
+const messageListView = (chapter) => {
+    const otherParticipants =
+              chapter.participants.filter(c => c.role !== "self");
+
+    return html`
+  <div>
+    <ul class="message-list">
+      ${ chapter.messageThreads.map(messageThreadView) }
+    </ul>
+
+    <div class="new-message">
+      <textarea rows="2"></textarea>
+      ${ messageRecipientListView(otherParticipants) }
+      <button class="btn">Send</button>
+    </div>
+  </div>
+`;
+};
+
+const reactionView = (state, prev, send) => {
+    if (!state.chapter.messageThreads) {
+        send("getMessages", { chapterId: state.chapter.id,
+                              characterToken: state.characterToken });
+        return html`Loading messages…`;
+    }
+
+    return html`
+  <div>
+    <div class="messages">
+      <h2>Conversation</h2>
+
+      ${ messageListView(state.chapter) }
+    </div>
+
+    <h2>Action</h2>
+
+    ${ state.banner ? bannerView(state.banner) : "" }
+
+    <div class="player-reply ${ state.reactionSent ? "invisible" : "" }">
+      <textarea
+         placeholder="What do you do? Try to consider several possibilities…"
+         rows="10"
+         value=${ state.chapter && state.chapter.reaction }
+         oninput=${ e => { send("updateReactionText", { value: e.target.value }); } }>${ state.chapter.reaction }</textarea>
+      <button class="btn btn-default" onclick=${ () => send("sendReaction") }>Send</button>
+    </div>
+  </div>
+`;
+};
 
 const chapterView = (state, prev, send) => html`
     <div id="chapter-container" class=${ state.started ? "" : "invisible transparent" }>
@@ -255,22 +393,8 @@ const chapterView = (state, prev, send) => html`
       <div class="chapter">
         ${ state.chapter ? state.chapter.text.content.toDOM() : "" }
       </div>
-
-      <div class="messages">
-        <h2>Conversation</h2>
-
-        ${ messageListView(state.fragment ? state.fragment.messages : []) }
-      </div>
-
-      ${ state.banner ? bannerView(state.banner) : "" }
-
-      <div class="player-reply ${ state.reactionSent ? "invisible" : "" }">
-        <textarea
-           placeholder="What do you do? Try to consider several possibilities…"
-           rows="10"
-           value=${ state.chapter && state.chapter.reaction }
-           oninput=${ e => { send("updateReactionText", { value: e.target.value }); } }>${ state.chapter && state.chapter.reaction }</textarea>
-        <button class="btn-default" onclick=${ () => send("sendReaction") }>Send</button>
+      <div class="reaction">
+        ${ state.chapter ? reactionView(state, prev, send) : "" }
       </div>
     </div>
 `;

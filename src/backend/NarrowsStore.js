@@ -394,6 +394,116 @@ class NarrowsStore {
             return { name: filename, type: type };
         });
     }
+
+    getChapterMessages(chapterId, characterId) {
+        return Q.ninvoke(
+            this.db,
+            "all",
+            `SELECT id, sender_id AS senderId, body, sent
+               FROM messages M JOIN message_deliveries MD
+                 ON M.id = MD.message_id
+              WHERE M.chapter_id = ? AND recipient_id = ?
+           ORDER BY sent`,
+            [chapterId, characterId]
+        ).then(messages => {
+            const messageIds = messages.map(m => m.id);
+            const placeholders = messageIds.map(() => "?").join(", ");
+
+            return Q.ninvoke(
+                this.db,
+                "all",
+                `SELECT MD.message_id AS messageId,
+                        MD.recipient_id AS recipientId,
+                        C.name
+                   FROM message_deliveries MD JOIN characters C
+                     ON MD.recipient_id = C.id
+                  WHERE message_id IN (${ placeholders })`,
+                messageIds
+            ).then(deliveries => {
+                const deliveryMap = {};
+                deliveries.forEach(({ messageId, recipientId, name }) => {
+                    deliveryMap[messageId] = deliveryMap[messageId] || [];
+                    deliveryMap[messageId].push({ id: recipientId,
+                                                  name: name });
+                });
+
+                messages.forEach(message => {
+                    message.recipients = deliveryMap[message.id];
+                });
+
+                return messages;
+            }).then(messages => {
+                const placeholders = messages.map(() => "?");
+
+                return Q.ninvoke(
+                    this.db,
+                    "all",
+                    `SELECT id, name FROM characters
+                      WHERE id IN (${ placeholders })`,
+                    messages.map(m => m.senderId)
+                ).then(characters => {
+                    const characterMap = {};
+                    characters.forEach(c => {
+                        characterMap[c.id] = {id: c.id, name: c.name};
+                    });
+
+                    messages.forEach(m => {
+                        m.sender = characterMap[m.senderId];
+                        delete m.senderId;
+                    });
+
+                    return messages;
+                });
+            });
+        });
+    }
+
+    addMessage(chapterId, senderId, text, recipients) {
+        const deferred = Q.defer();
+        const self = this;
+
+        this.db.run(
+            `INSERT INTO messages (chapter_id, sender_id, body, sent)
+               VALUES (?, ?, ?, DATETIME('now'))`,
+            [chapterId, senderId, text],
+            function(err) {
+                if (err) {
+                    deferred.reject(err);
+                    return;
+                }
+
+                // Message without recipients is only for the narrator
+                // (as the narrator is a "user", not a "character", it
+                // cannot be in the recipient list, and instead is an
+                // implicit recipient of all messages).
+                if (!recipients.length) {
+                    deferred.resolve({});
+                    return;
+                }
+
+                const messageId = this.lastID;
+                const valueQueryPart =
+                          recipients.map(() => "(?, ?)").join(", ");
+                const queryValues = recipients.reduce((acc, mr) => (
+                    acc.concat(messageId, mr)
+                ), []);
+
+                Q.ninvoke(
+                    self.db,
+                    "run",
+                    `INSERT INTO message_deliveries
+                       (message_id, recipient_id) VALUES ${ valueQueryPart }`,
+                    queryValues
+                ).then(() => {
+                    deferred.resolve({});
+                }).catch(err => {
+                    deferred.reject(err);
+                });
+            }
+        );
+
+        return deferred.promise;
+    }
 }
 
 export default NarrowsStore;

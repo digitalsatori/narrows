@@ -70,11 +70,17 @@ const MIGRATIONS = [
         return statementListPromise(db, [
             `CREATE TABLE messages (id integer primary key,
                                     chapter_id integer REFERENCES chapters(id),
-                                    sender_id integer REFERENCES users(id),
+                                    sender_id integer REFERENCES characters(id),
                                     body text,
                                     sent timestamp NOT NULL DEFAULT current_timestamp)`,
             `CREATE TABLE message_deliveries (message_id integer REFERENCES messages(id),
-                                              recipient_id integer REFERENCES users(id))`
+                                              recipient_id integer REFERENCES characters(id))`
+        ]);
+    },
+
+    function addNarrationNarrator(db) {
+        return statementListPromise(db, [
+            `ALTER TABLE narrations ADD narrator_id integer NOT NULL REFERENCES users(id);`
         ]);
     }
 ];
