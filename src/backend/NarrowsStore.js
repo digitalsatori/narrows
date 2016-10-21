@@ -16,6 +16,7 @@ const JSON_TO_DB = {
     backgroundImage: "background_image",
     text: "main_text",
     published: "published",
+    narratorId: "narrator_id",
     defaultBackgroundImage: "default_background_image",
     defaultAudio: "default_audio"
 };
@@ -349,6 +350,25 @@ class NarrowsStore {
         );
     }
 
+    addCharacter(name, token) {
+        const deferred = Q.defer();
+
+        this.db.run(
+            `INSERT INTO characters (name, token) VALUES (?, ?)`,
+            [name, token],
+            function(err) {
+                if (err) {
+                    deferred.reject(err);
+                    return;
+                }
+
+                deferred.resolve(this.lastID);
+            }
+        );
+
+        return deferred.promise;
+    }
+
     addParticipant(chapterId, characterId) {
         return this.getChapter(chapterId).then(() => (
             this.getChapterParticipants(chapterId)
@@ -399,12 +419,13 @@ class NarrowsStore {
         return Q.ninvoke(
             this.db,
             "all",
-            `SELECT id, sender_id AS senderId, body, sent
-               FROM messages M JOIN message_deliveries MD
+            `SELECT id, sender_id AS senderId, body, sent AS sentAt
+               FROM messages M LEFT JOIN message_deliveries MD
                  ON M.id = MD.message_id
-              WHERE M.chapter_id = ? AND recipient_id = ?
+              WHERE M.chapter_id = ?
+                AND (recipient_id = ? OR sender_id = ?)
            ORDER BY sent`,
-            [chapterId, characterId]
+            [chapterId, characterId, characterId]
         ).then(messages => {
             const messageIds = messages.map(m => m.id);
             const placeholders = messageIds.map(() => "?").join(", ");

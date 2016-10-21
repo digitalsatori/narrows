@@ -99,10 +99,15 @@ app.model({
 
         receiveChapterMessages: (data, state) => {
             return extend(state, {
+                characterId: data.characterId,
                 chapter: extend(state.chapter, {
                     messageThreads: data.messageThreads
                 })
             });
+        },
+
+        updateNewMessageText: (data, state) => {
+            return extend(state, { newMessageText: data.value });
         }
     },
     effects: {
@@ -182,51 +187,19 @@ app.model({
             const url = "/api/messages/" + state.chapterId + "/" +
                       state.characterToken;
 
-            send("receiveChapterMessages", {
-                messageThreads: [
-                    {participants: [
-                        {id: 3, name: "Mildred Mayfield"}
-                    ],
-                     messages: [
-                         {sender: null,
-                          body: "The Harrises have a phone at home.",
-                          sentAt: "2016-10-18T22:09"},
-                         {sender: {id: 1, name: "Mildred Mayfield", role: "self"},
-                          body: "Could I use it to make an interstate call or is it too expensive?",
-                          sentAt: "2016-10-18T22:09"}
-                     ]},
-                    {participants: [
-                        {id: 2, name: "Frank Mayfield"},
-                        {id: 3, name: "Mildred Mayfield"},
-                        {id: 4, name: "George Miller"}
-                    ],
-                     messages: [
-                         {sender: {id: 2, name: "Frank Mayfield", role: "character"},
-                          body: "I don't think we should rely on the " +
-                              "police, but talking to them could help us.",
-                          sentAt: "2016-10-18T22:11"},
-                         {sender: {id: 4, name: "George Miller", role: "character"},
-                          body: "Yeah. At the very least, they will " +
-                              "give us some information so we can " +
-                              "figure things out by ourselves.",
-                          sentAt: "2016-10-18T22:11"}
-                     ]}
-                ]
-            }, done);
+            const xhr = new XMLHttpRequest();
+            xhr.open("GET", url);
+            xhr.setRequestHeader("Content-Type", "application/json");
+            xhr.addEventListener("load", function() {
+                const response = JSON.parse(this.responseText);
+                if (this.status >= 400) {
+                    send("getMessagesFailure", {response: this}, done);
+                    return;
+                }
 
-            // const xhr = new XMLHttpRequest();
-            // xhr.open("GET", url);
-            // xhr.setRequestHeader("Content-Type", "application/json");
-            // xhr.addEventListener("load", function() {
-            //     const response = JSON.parse(this.responseText);
-            //     if (this.status >= 400) {
-            //         send("getMessagesFailure", {response: this}, done);
-            //         return;
-            //     }
-
-            //     send("receiveChapterMessages", {}, done);
-            // });
-            // xhr.send(JSON.stringify({ text: state.chapter.reaction }));
+                send("receiveChapterMessages", response, done);
+            });
+            xhr.send(JSON.stringify({ text: state.chapter.reaction }));
         }
     },
 
@@ -294,9 +267,9 @@ const messageView = (message) => html`
   </div>
 `;
 
-const messageThreadView = (messageThread) => {
+const messageThreadView = (messageThread, characterId) => {
     const participants = messageThread.participants.
-              filter(r => r.role !== "self").
+              filter(p => p.id !== characterId).
               map(char => char.name);
     const participantEnd = participants.length > 0 ?
               ", the narrator, and you" : "the narrator and you";
@@ -322,22 +295,25 @@ const messageRecipientListView = (characters) => html`
   <div class="recipients">
     <label>Recipients:</label>
     <input type="checkbox" checked disabled /> Narrator
-    ${ characters.filter(c => c.role !== "self").map(messageRecipientView) }
+    ${ characters.map(messageRecipientView) }
   </div>
 `;
 
-const messageListView = (chapter) => {
+const messageListView = (chapter, characterId, newMessageText, send) => {
     const otherParticipants =
-              chapter.participants.filter(c => c.role !== "self");
+              chapter.participants.filter(c => c.id !== characterId);
 
     return html`
   <div>
     <ul class="message-list">
-      ${ chapter.messageThreads.map(messageThreadView) }
+      ${ chapter.messageThreads.map(t => messageThreadView(t, characterId)) }
     </ul>
 
     <div class="new-message">
-      <textarea rows="2"></textarea>
+      <textarea rows="2"
+                oninput=${ e => send("updateNewMessageText",
+                                     { value: e.target.value }) }
+                value=${ newMessageText }>${ newMessageText }</textarea>
       ${ messageRecipientListView(otherParticipants) }
       <button class="btn">Send</button>
     </div>
@@ -357,7 +333,7 @@ const reactionView = (state, prev, send) => {
     <div class="messages">
       <h2>Conversation</h2>
 
-      ${ messageListView(state.chapter) }
+      ${ messageListView(state.chapter, state.characterId, state.newMessageText, send) }
     </div>
 
     <h2>Action</h2>

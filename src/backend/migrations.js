@@ -80,7 +80,7 @@ const MIGRATIONS = [
 
     function addNarrationNarrator(db) {
         return statementListPromise(db, [
-            `ALTER TABLE narrations ADD narrator_id integer NOT NULL REFERENCES users(id);`
+            `ALTER TABLE narrations ADD narrator_id integer REFERENCES users(id)`
         ]);
     }
 ];

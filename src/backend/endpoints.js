@@ -153,9 +153,12 @@ export function getMessagesCharacter(req, res) {
           characterToken = req.params.charToken;
 
     store.getCharacterId(characterToken).then(characterId => {
-        return store.getChapterMessages(chapterId, characterId);
-    }).then(messages => {
-        res.json({ messageThreads: messageUtils.threadMessages(messages) });
+        return store.getChapterMessages(chapterId, characterId).then(messages => {
+            res.json({
+                messageThreads: messageUtils.threadMessages(messages),
+                characterId: characterId
+            });
+        });
     }).catch(err => {
         res.status(500).json({
             errorMessage: `Could not get messages: ${ err }`

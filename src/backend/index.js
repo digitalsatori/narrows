@@ -61,5 +61,5 @@ app.post("/api/messages/:chptId/:charToken", endpoints.postMessageCharacter);
 app.use("/static/narrations", express.static(config.files.path));
 
 app.listen(config.port, function () {
-  console.log(`Example app listening on port ${ config.port }!`);
+  console.log(`Narrows app listening on port ${ config.port }!`);
 });
