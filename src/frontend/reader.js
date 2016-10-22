@@ -97,7 +97,7 @@ app.model({
                                    reactionSent: true });
         },
 
-        receiveChapterMessages: (data, state) => {
+        getMessagesSuccess: (data, state) => {
             return extend(state, {
                 characterId: data.characterId,
                 chapter: extend(state.chapter, {
@@ -107,7 +107,36 @@ app.model({
         },
 
         updateNewMessageText: (data, state) => {
-            return extend(state, { newMessageText: data.value });
+            return extend(state, {
+                newMessage: extend(state.newMessage || { text: "", recipients: [] }, {
+                    text: data.value
+                })
+            });
+        },
+
+        updateNewMessageRecipient: (data, state) => {
+            let newRecipientList =
+                    (state.newMessage && state.newMessage.recipients || []).filter(r => (
+                        r !== data.id
+                    ));
+            if (data.value) {
+                newRecipientList = newRecipientList.concat(data.id);
+            }
+
+            return extend(state, {
+                newMessage: extend((state.newMessage || { text: "", recipients: [] }), {
+                    recipients: newRecipientList
+                })
+            });
+        },
+
+        sendMessageSuccess: (data, state) => {
+            return extend(state, {
+                newMessage: { text: "", recipients: [] },
+                chapter: extend(state.chapter, {
+                    messageThreads: data.messageThreads
+                })
+            });
         }
     },
     effects: {
@@ -189,7 +218,6 @@ app.model({
 
             const xhr = new XMLHttpRequest();
             xhr.open("GET", url);
-            xhr.setRequestHeader("Content-Type", "application/json");
             xhr.addEventListener("load", function() {
                 const response = JSON.parse(this.responseText);
                 if (this.status >= 400) {
@@ -197,9 +225,28 @@ app.model({
                     return;
                 }
 
-                send("receiveChapterMessages", response, done);
+                send("getMessagesSuccess", response, done);
             });
             xhr.send(JSON.stringify({ text: state.chapter.reaction }));
+        },
+
+        sendMessage: (data, state, send, done) => {
+            const url = "/api/messages/" + state.chapterId + "/" +
+                      state.characterToken;
+
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", url);
+            xhr.setRequestHeader("Content-Type", "application/json");
+            xhr.addEventListener("load", function() {
+                const response = JSON.parse(this.responseText);
+                if (this.status >= 400) {
+                    send("sendMessageFailure", {response: this}, done);
+                    return;
+                }
+
+                send("sendMessageSuccess", response, done);
+            });
+            xhr.send(JSON.stringify(state.newMessage));
         }
     },
 
@@ -284,22 +331,27 @@ const messageThreadView = (messageThread, characterId) => {
 `;
 };
 
-const messageRecipientView = character => html`
+const messageRecipientView = (character, recipients, send) => html`
   <label>
-    <input type="checkbox" value=${ character.id } />
+    <input type="checkbox"
+           value=${ character.id }
+           checked=${ recipients.indexOf(character.id) !== -1 }
+           onchange=${ e => send("updateNewMessageRecipient",
+                                 { id: character.id,
+                                   value: e.target.checked }) } />
     ${ character.name }
   </label>
 `;
 
-const messageRecipientListView = (characters) => html`
+const messageRecipientListView = (characters, recipients, send) => html`
   <div class="recipients">
     <label>Recipients:</label>
     <input type="checkbox" checked disabled /> Narrator
-    ${ characters.map(messageRecipientView) }
+    ${ characters.map(c => messageRecipientView(c, recipients, send)) }
   </div>
 `;
 
-const messageListView = (chapter, characterId, newMessageText, send) => {
+const messageListView = (chapter, characterId, newMessage, send) => {
     const otherParticipants =
               chapter.participants.filter(c => c.id !== characterId);
 
@@ -313,9 +365,12 @@ const messageListView = (chapter, characterId, newMessageText, send) => {
       <textarea rows="2"
                 oninput=${ e => send("updateNewMessageText",
                                      { value: e.target.value }) }
-                value=${ newMessageText }>${ newMessageText }</textarea>
-      ${ messageRecipientListView(otherParticipants) }
-      <button class="btn">Send</button>
+                value=${ newMessage.text }>${ newMessage.text }</textarea>
+      ${ messageRecipientListView(otherParticipants,
+                                  newMessage.recipients,
+                                  send) }
+      <button class="btn"
+              onclick=${ () => send("sendMessage") }>Send</button>
     </div>
   </div>
 `;
@@ -331,9 +386,12 @@ const reactionView = (state, prev, send) => {
     return html`
   <div>
     <div class="messages">
-      <h2>Conversation</h2>
+      <h2>Discussion</h2>
 
-      ${ messageListView(state.chapter, state.characterId, state.newMessageText, send) }
+      ${ messageListView(state.chapter,
+                         state.characterId,
+                         state.newMessage || { text: "", recipients: [] },
+                         send) }
     </div>
 
     <h2>Action</h2>

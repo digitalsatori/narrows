@@ -180,8 +180,13 @@ export function postMessageCharacter(req, res) {
             characterId,
             messageText,
             messageRecipients
-        ).then(m => {
-            res.json(m);
+        ).then(() => {
+            return store.getChapterMessages(chapterId, characterId);
+        }).then(messages => {
+            res.json({
+                messageThreads: messageUtils.threadMessages(messages),
+                characterId: characterId
+            });
         });
     }).catch(err => {
         res.status(500).json({
