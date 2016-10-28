@@ -143,6 +143,13 @@ class NarrowsStore {
             "SELECT id, title, published FROM chapters WHERE narration_id = ?",
             id
         ).then(chapters => {
+            const chapterMap = {};
+            chapters.forEach(chapter => {
+                chapterMap[chapter.id] = chapter;
+                chapter.reactions = [];
+                chapter.numberMessages = 0;
+            });
+
             let placeholders = [];
             for (let i = 0; i < chapters.length; i++) {
                 placeholders.push("?");
@@ -158,15 +165,32 @@ class NarrowsStore {
                   WHERE chapterId IN (${ placeholders.join(", ") })`,
                 chapters.map(f => f.id)
             ).then(reactions => {
-                const chapterMap = {};
-                chapters.forEach(chapter => {
-                    chapterMap[chapter.id] = chapter;
-                });
                 reactions.forEach(reaction => {
                     const chapter = chapterMap[reaction.chapterId];
-                    chapter.reactions = chapter.reactions || [];
                     chapter.reactions.push(reaction);
                 });
+                return [chapters, chapterMap];
+            });
+        }).spread((chapters, chapterMap) => {
+            let placeholders = [];
+            for (let i = 0; i < chapters.length; i++) {
+                placeholders.push("?");
+            }
+
+            return Q.ninvoke(
+                this.db,
+                "all",
+                `SELECT chapter_id AS chapterId, COUNT(*) AS numberMessages
+                   FROM messages
+                  WHERE chapter_id IN (${ placeholders.join(", ") })
+               GROUP BY chapter_id`,
+                chapters.map(f => f.id)
+            ).then(numberMessagesPerChapter => {
+                numberMessagesPerChapter.forEach(numberAndChapter => {
+                    chapterMap[numberAndChapter.chapterId].numberMessages =
+                        numberAndChapter.numberMessages;
+                });
+
                 return chapters;
             });
         });
