@@ -552,7 +552,7 @@ class NarrowsStore {
         return Q.ninvoke(
             this.db,
             "get",
-            `SELECT CHAP.id, CHAP.title
+            `SELECT CHAP.id, CHAP.title, CHAP.published
                FROM chapters CHAP
                JOIN characters CHAR
                  ON CHAP.narration_id = CHAR.narration_id

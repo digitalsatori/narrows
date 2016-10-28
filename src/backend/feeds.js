@@ -8,14 +8,26 @@ function escapeHTML(text) {
 }
 
 function makeCharacterFeed(baseUrl, character, store) {
-    return store.getActiveChapter(character.id).then(chapter => {
-        return store.getChapterMessages(chapter.id, character.id).then(messages => {
-            const feed = new RSS({
-                title: `News for ${ character.name } — Narrows`,
-                feed_url: `${ baseUrl }/feeds/${ character.token }`,
-                site_url: baseUrl
-            });
+    const feed = new RSS({
+        title: `News for ${ character.name } — Narrows`,
+        feed_url: `${ baseUrl }/feeds/${ character.token }`,
+        site_url: baseUrl
+    });
 
+    return store.getActiveChapter(character.id).then(chapter => {
+        const chapterUrl =
+                  `https://narrows.hcoder.org/read/${ chapter.id }/${ character.token }`;
+
+        feed.item({
+            title: `New chapter "${ chapter.title }"`,
+            description: `A new chapter, titled "${ chapter.title }",` +
+                ` has been published.`,
+            url: chapterUrl,
+            guid: `new-chapter-${ chapter.id }`,
+            date: chapter.published
+        });
+
+        return store.getChapterMessages(chapter.id, character.id).then(messages => {
             messages.forEach(message => {
                 const senderName = message.sender ?
                           message.sender.name : "Narrator";
@@ -32,7 +44,7 @@ function makeCharacterFeed(baseUrl, character, store) {
                     feed.item({
                         title: `Message from ${ escapeHTML(senderName) } in "${ escapeHTML(chapter.title) }"`,
                         description: description,
-                        url: `https://narrows.hcoder.org/read/${ chapter.id }/${ character.token }`,
+                        url: chapterUrl,
                         guid: `${ chapter.id }-${ character.token }-${ message.id }`,
                         date: message.sentAt
                     });
